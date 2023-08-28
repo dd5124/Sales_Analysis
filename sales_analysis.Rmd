@@ -1,0 +1,380 @@
+---
+title: "Sales_Analysis"
+author: "Yeji Sohn"
+date: '2023-08-27'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+listOfPackages <- c("dplyr","tidyverse","kableExtra", "tidyr", "broom", "knitr", "ggplot2", "lubridate", "scales", "cowplot")
+for (i in listOfPackages){
+     if(! i %in% installed.packages()){
+         install.packages(i, dependencies = TRUE)
+     }
+     require(i)
+}
+```
+
+# Valid value check
+```{r}
+# Clean data
+df = read.csv('data_/online_retail.csv')
+
+# add Date and revenue
+df <- df %>% 
+  filter(!StockCode == "AMAZONFEE") %>%
+  mutate(Date = as.Date(InvoiceDate, "%m/%d/%Y")) %>%
+  mutate(revenue  = UnitPrice * Quantity) %>%
+  mutate(month = month(Date),
+         day = day(Date),
+         after15 = ifelse(day > 15, 1, 0),
+         month2 = month + 0.5*after15)
+```
+
+```{r}
+pos_df <- df %>%
+  filter(Quantity >= 0 & UnitPrice >= 0)
+colSums(df<0)
+
+df %>%
+  filter(UnitPrice < 0)
+```
+
+Orders with negative quantites are refunds, and orders with negative price are bad debt adjustment. Rows with Negative price will be dropped. 
+
+# Overview 
+
+```{r}
+#only purchase
+df_pos <- df %>%
+  filter(Quantity >= 0)
+
+#only return
+df_neg <- df %>%
+  filter(Quantity < 0)
+```
+
+## number of unique order & return
+```{r}
+df %>% 
+  summarise(number_of_order = length(unique(ifelse(Quantity > 0, InvoiceNo, 0))),
+            number_of_return = length(unique(ifelse(Quantity < 0, InvoiceNo, 0)))) %>% 
+  mutate(returns_share = number_of_return / number_of_order)
+
+#by items
+df %>% 
+  summarise(number_of_sold_items = sum(ifelse(Quantity > 0, Quantity, 0)),
+            number_of_returned_items = sum(ifelse(Quantity < 0, -Quantity, 0))) %>% 
+  mutate(returns_share_items = number_of_returned_items / number_of_sold_items)
+#by revenue
+
+df %>% 
+  summarise(total_revenue = sum(ifelse(Quantity > 0, Quantity, 0) * UnitPrice, na.rm = TRUE),
+            total_returned_revenue = sum(ifelse(Quantity < 0, -Quantity, 0) * UnitPrice, na.rm = TRUE)) %>% 
+  mutate(returns_share = total_returned_revenue / total_revenue)
+
+#avg order revenue
+
+df %>% 
+  summarise(number_of_unique_customer = length(unique(CustomerID)),
+            total_revenue = sum(revenue)) %>% 
+  mutate(Avg_revenue_per_order = total_revenue / number_of_unique_customer)
+
+
+```
+
+```{r}
+df2 <- df %>%
+  filter(Quantity > 0) %>%
+  group_by(Date) %>%
+  summarise(order_num  = length(unique(InvoiceNo))) %>% 
+  arrange(desc(order_num)) %>%
+  ungroup() %>%
+  mutate(order_num)
+
+df2 <- df2 %>%
+  mutate(month = month(Date),
+         day = day(Date),
+         after15 = ifelse(day > 15, 1, 0),
+         month2 = month + 0.5*after15
+         )
+```
+
+```{r}
+#Number of Order (no return) per month
+plot(df2$Date, df2$order_num, xlab = 'Month', ylab = 'Number of Orders')
+
+ggplot(df2, aes(x=month, y=order_num)) + 
+  geom_histogram(stat = "identity", fill = 'blue', color = 'white') +
+  theme_bw() + 
+  scale_x_continuous(expand = c(0,0),breaks=seq(0, 12, by = 1)) + 
+  scale_y_continuous(expand = expansion(mult = c(0,0.1))) + 
+  labs(x = 'Month',
+       y = 'Number of Orders')
+
+#per 0.5 month 
+ggplot(df2, aes(x=month2, y=order_num)) + 
+  geom_histogram(stat = "identity", fill = 'blue', color = 'white') +
+  theme_bw() + 
+  scale_x_continuous(expand = c(0,0),breaks=seq(0, 12, by = 1)) + 
+  scale_y_continuous(expand = expansion(mult = c(0,0.1))) + 
+  labs(x = 'Month',
+       y = 'Number of Orders')
+```
+
+```{r}
+df3 <- df %>%
+  filter(Quantity < 0) %>%
+  group_by(Date) %>%
+  summarise(order_num  = length(unique(InvoiceNo))) %>% 
+  arrange(desc(order_num)) %>%
+  ungroup() %>%
+  mutate(order_num)
+
+df3 <- df3 %>%
+  mutate(month = month(df3$Date),
+         day = day(df3$Date),
+         after15 = ifelse(day > 15, 1, 0),
+         month2 = month + 0.5*after15
+         )
+
+```
+
+```{r}
+#Number of Returns per month
+plot(df3$Date, df3$order_num, xlab = 'Month', ylab = 'Number of Returns')
+
+ggplot(df3, aes(x=month, y=order_num)) + 
+  geom_histogram(stat = "identity", fill = 'blue', color = 'white') +
+  theme_bw() + 
+  scale_x_continuous(expand = c(0,0),breaks=seq(0, 12, by = 1)) + 
+  scale_y_continuous(expand = expansion(mult = c(0,0.1))) + 
+  labs(x = 'Month',
+       y = 'Number of Returns')
+
+#per 0.5month
+ggplot(df3, aes(x=month2, y=order_num)) + 
+  geom_histogram(stat = "identity", fill = 'blue', color = 'white') +
+  theme_bw() + 
+  scale_x_continuous(expand = c(0,0),breaks=seq(0, 12, by = 1)) + 
+  scale_y_continuous(expand = expansion(mult = c(0,0.1))) + 
+  labs(x = 'Month',
+       y = 'Number of Returns')
+```
+
+```{r}
+#revenue per month
+df4 <- df %>%
+  filter(Quantity > 0) %>%
+  group_by(month) %>%
+  summarise(month_revenue  = sum(revenue)) %>% 
+  mutate(month_revenue)
+
+p <- ggplot(df4, aes(x=month, y=month_revenue)) + 
+  geom_histogram(stat = "identity", fill = 'blue', color = 'white') + 
+  theme_bw() + 
+  scale_x_continuous(expand = c(0,0), breaks=seq(0, 12, by = 1)) +
+  scale_y_continuous(expand = expansion(mult = c(0,0))) +
+  labs(x = 'Month',
+       y = 'Revenue')
+
+point <- format_format(big.mark = " ", decimal.mark = ",", scientific = FALSE)
+
+p + scale_y_continuous(labels = point)
+
+#per0.5 month 
+df4b <- df %>%
+  filter(Quantity > 0) %>%
+  group_by(month2) %>%
+  summarise(month_revenue  = sum(revenue)) %>% 
+  mutate(month_revenue)
+
+p <- ggplot(df4b, aes(x=month2, y=month_revenue)) + 
+  geom_histogram(stat = "identity", fill = 'blue', color = 'white') + 
+  theme_bw() + 
+  scale_x_continuous(expand = c(0,0), breaks=seq(0, 12, by = 1)) +
+  scale_y_continuous(expand = expansion(mult = c(0,0))) +
+  labs(x = 'Month',
+       y = 'Revenue')
+
+p + scale_y_continuous(labels = point)
+
+##################################
+#filter the biggest 2 order that have been returned
+df4 <- df %>%
+  filter(Quantity > 0) %>%
+  filter(!StockCode == "23843" & !StockCode == "23166") %>%
+  group_by(month) %>%
+  summarise(month_revenue  = sum(revenue)) %>% 
+  mutate(month_revenue)
+
+p <- ggplot(df4, aes(x=month, y=month_revenue)) + 
+  geom_histogram(stat = "identity", fill = 'black', color = 'white') + 
+  theme_bw() + 
+  scale_x_continuous(expand = c(0,0), breaks=seq(0, 12, by = 1)) +
+  labs(x = 'Month',
+       y = 'Revenue')
+
+p + scale_y_continuous(labels = point)
+
+```
+
+```{r}
+df5 <- df %>%
+  filter(Quantity < 0) %>%
+  group_by(month) %>%
+  summarise(return_amount  = abs(sum(revenue))) %>% 
+  mutate(return_amount)
+
+p <- ggplot(df5, aes( x = month, y = return_amount)) + 
+  geom_histogram(stat = "identity", fill = 'blue', color = 'white') +
+  theme_bw() + 
+  scale_x_continuous(expand = c(0,0),breaks=seq(0, 12, by = 1)) + 
+  scale_y_continuous(expand = expansion(mult = c(0,0.1))) + 
+  labs(x = 'Month',
+       y = 'Return Amount')
+
+p + scale_y_continuous(labels = point)
+
+#per 0.5 month
+
+df5b <- df %>%
+  filter(Quantity < 0) %>%
+  group_by(month2) %>%
+  summarise(return_amount  = abs(sum(revenue))) %>% 
+  mutate(return_amount)
+
+p <- ggplot(df5b, aes( x = month2, y = return_amount)) + 
+  geom_histogram(stat = "identity", fill = 'blue', color = 'white') +
+  theme_bw() + 
+  scale_x_continuous(expand = c(0,0),breaks=seq(0, 12, by = 1)) + 
+  scale_y_continuous(expand = expansion(mult = c(0,0.1))) + 
+  labs(x = 'Month',
+       y = 'Return Amount')
+
+p + scale_y_continuous(labels = point)
+
+#############################
+#filter the biggest 2 order that have been returned
+df5 <- df %>%
+  filter(Quantity < 0) %>%
+  filter(!StockCode == "23843" & !StockCode == "23166") %>%
+  group_by(month) %>%
+  summarise(return_amount  = abs(sum(revenue))) %>% 
+  mutate(return_amount)
+
+p <- ggplot(df5, aes( x = month, y = return_amount)) + 
+  geom_histogram(stat = "identity", fill = 'black', color = 'white') + 
+  theme_bw() + 
+  scale_x_continuous(breaks=seq(0, 12, by = 1)) + 
+  labs(x = 'Month',
+       y = 'Return Amount')
+
+p + scale_y_continuous(labels = point)
+
+#per 0.5 month
+
+df5b <- df %>%
+  filter(Quantity < 0) %>%
+  filter(!StockCode == "23843" & !StockCode == "23166") %>%
+  group_by(month2) %>%
+  summarise(return_amount  = abs(sum(revenue))) %>% 
+  mutate(return_amount)
+
+p <- ggplot(df5b, aes( x = month2, y = return_amount)) + 
+  geom_histogram(stat = "identity", fill = 'blue', color = 'white') +
+  theme_bw() + 
+  scale_x_continuous(expand = c(0,0),breaks=seq(0, 12, by = 1)) + 
+  scale_y_continuous(expand = expansion(mult = c(0,0.1))) + 
+  labs(x = 'Month',
+       y = 'Return Amount')
+
+p + scale_y_continuous(labels = point)
+
+```
+
+## Characteristics of customers who got discount
+```{r}
+df <- read.csv("data_/online_retail.csv")
+d <- as.POSIXct(df$InvoiceDate, format = "%m/%d/%Y %H:%M")
+df$InvoiceDate <- d
+
+discount <- df %>%
+  filter(StockCode == "D")  %>%
+  select(CustomerID)
+d <- df %>%
+  inner_join(discount, by = "CustomerID")
+sample_n(d, 10)
+```
+
+## Transaction volume variation over day of time
+```{r}
+# If InvoiceDate is in local time
+temp <- df %>% 
+  mutate(Hour = as.integer(strftime(InvoiceDate, format="%H")))
+min(temp$Hour)
+max(temp$Hour)
+```
+
+```{r}
+hist(temp$Hour)
+```
+
+Most orders are made middle of the date. Note that there is no orders before 6 am and after 9 pm. The distribution is approximately normal.
+
+# Understanding Returns
+
+**Returned products are represented as negative values in the dataset**
+
+```{r}
+df <- read_csv("data_/online_retail.csv")
+df$revenue <- df$Quantity * df$UnitPrice 
+returned_df = df[df$Quantity < 0, ]
+retProds <- returned_df %>% 
+  group_by(StockCode, Description, UnitPrice, CustomerID, quantRet = abs(Quantity)) %>% #quantRet = quantity returned
+  summarise(revenue_returned = sum(abs(revenue)))
+
+top_retProds_noAMZN <- head(retProds[order(-retProds$revenue_returned), ] %>% filter(StockCode != 'AMAZONFEE'), 10)
+kable(top_retProds_noAMZN) %>% kable_styling(latex_options = "striped")
+```
+The products with the most quantity and revenue returned are _Paper Craft , LITTLE BIRDIE_ and _MEDIUM CERMAIC TOP STORAGE JAR_. However, there's still some uncertainty shrouding _AMAZON FEE_ as it accounts for bottom 7 of top 10 list of products with the most returns, but it is registered as a distinct products instead of 1. Also there's no CustomerID so it's impossible to know who is purchasing this _AMAZON FEEs_.
+
+```{r}
+retProdsLean <- returned_df %>% 
+  group_by(StockCode, Description) %>% #grouping amazon fee and manual 
+  summarise(quantity_returned = sum(abs(Quantity)),revenue_returned = sum(abs(revenue)))
+top_retProds_noAMZNLean <- head(retProdsLean[order(-retProdsLean$revenue_returned), ], 10)
+kable(top_retProds_noAMZNLean) %>% kable_styling(latex_options = "striped")
+#table(returned_df[order(-returned_df$revenue_returned), ]$Description )
+```
+
+# Understanding Market
+
+```{r}
+df = read.csv('data_/online_retail.csv')
+d = as.integer(format(as.POSIXct(df$InvoiceDate, format = "%m/%d/%Y %H:%M"), "%Y"))
+df$InvoiceDate <- d
+names(df)[names(df) == 'InvoiceDate'] <- 'year'
+gdp = read.csv('data_/gdp_per_capita.csv')
+gdp = gdp %>% select("Country.Name", "Code", "X2011", "X2010")
+```
+
+```{r}
+df_pc = left_join(df, gdp, by=c("Country" = "Country.Name"))
+
+df_pc = df_pc %>%
+  filter(Quantity > 0) %>%
+  filter(UnitPrice > 0)
+
+df_pc = df_pc %>%
+  mutate(gdp_pc = ifelse(year == 2010, X2010, X2011))  %>%
+  mutate(revenue = UnitPrice*Quantity)
+
+df_pc_rev = df_pc %>%
+  group_by(Country, year) %>%
+  summarize(revenue = sum(revenue))
+
+df_gdp = df_pc %>% select(Country, year, gdp_pc, Code)  %>% distinct
+df_viz = left_join(df_pc_rev, df_gdp, by=c("Country", "year"))
+```
