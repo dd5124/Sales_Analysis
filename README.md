@@ -1,5 +1,5 @@
 # Sales Analysis
-This sales analysis dones using public Amazon sales dataset and gdp dataset from Kaggle.
+This sales analysis done using public Amazon sales dataset and gdp dataset from Kaggle.
 <p><a href="https://github.com/dd5124/Sales_Analysis/blob/main/Presentation/Presentation.pptx">Download PPTX</a></p>
 
 ![Presentaion-01](https://github.com/dd5124/Sales_Analysis/blob/main/Presentation/_images/Presentation-01.png?raw=true)
